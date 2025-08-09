@@ -1,11 +1,14 @@
 import logging
 import uuid
+import asyncio
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
+
+from document_handler import DocumentHandler, DocumentMetadata, DocumentProcessingResult
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -88,15 +91,78 @@ class MetricsResponse(BaseModel):
 
 # In-memory storage (replace with actual database in production)
 documents_db = {}
+processed_documents = {}  # Store processed PDF data
 chat_queries_count = 0
 app_start_time = datetime.now()
 
+# Initialize document handler with modular pipeline
+document_handler = DocumentHandler(
+    chunk_size=1200,
+    chunk_overlap=200,
+    llm_model="gpt-4o-mini",
+    collection_name="pdf_documents",
+    enable_vector_store=True
+)
+
+
+
+async def process_document_background(document_id: str, file_path: str):
+    """Background task to process uploaded document."""
+    try:
+        logger.info(f"Starting background processing for document {document_id}")
+        
+        # Update status to processing
+        if document_id in documents_db:
+            documents_db[document_id]["status"] = DocumentStatus.PROCESSING
+            documents_db[document_id]["updated_at"] = datetime.now()
+        
+        # Process the document using modular handler
+        result = await document_handler.process_document(file_path, document_id)
+        
+        if result.success:
+            # Store processed data (convert to dict for consistency)
+            processed_documents[document_id] = {
+                "success": True,
+                "metadata": result.metadata.model_dump(),
+                "analysis": result.analysis.model_dump() if result.analysis else None,
+                "chunks": [chunk.model_dump() for chunk in result.chunks],
+                "vector_ids": result.vector_ids,
+            }
+            
+            # Update document status to done
+            documents_db[document_id]["status"] = DocumentStatus.DONE
+            documents_db[document_id]["updated_at"] = datetime.now()
+            documents_db[document_id]["processing_time"] = result.metadata.processing_time
+            
+            logger.info(f"Document {document_id} processed successfully: {len(result.chunks)} chunks, {len(result.vector_ids)} vectors stored")
+        else:
+            # Update status to error
+            documents_db[document_id]["status"] = DocumentStatus.ERROR
+            documents_db[document_id]["error_message"] = result.error
+            documents_db[document_id]["updated_at"] = datetime.now()
+            logger.error(f"Document {document_id} processing failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Background processing failed for {document_id}: {str(e)}")
+        if document_id in documents_db:
+            documents_db[document_id]["status"] = DocumentStatus.ERROR
+            documents_db[document_id]["error_message"] = str(e)
+            documents_db[document_id]["updated_at"] = datetime.now()
+
 @app.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...), background_tasks: BackgroundTasks = BackgroundTasks()):
     """Upload a document for processing."""
     try:
+        # Validate file type
+        if not file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        
         # Generate unique document ID
         document_id = str(uuid.uuid4())
+        
+        # Read and save file
+        file_content = await file.read()
+        file_path = DocumentHandler.save_uploaded_file(file_content, file.filename)
         
         # Store document info
         documents_db[document_id] = {
@@ -106,10 +172,14 @@ async def upload_document(file: UploadFile = File(...)):
             "status": DocumentStatus.QUEUED,
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
-            "file_size": 0,  # Would be populated with actual file size
+            "file_size": len(file_content),
+            "file_path": file_path
         }
         
-        logger.info(f"Document uploaded: {document_id}, filename: {file.filename}")
+        # Start background processing
+        background_tasks.add_task(process_document_background, document_id, file_path)
+        
+        logger.info(f"Document uploaded: {document_id}, filename: {file.filename}, size: {len(file_content)} bytes")
         
         return DocumentUploadResponse(
             document_id=document_id,
@@ -117,6 +187,8 @@ async def upload_document(file: UploadFile = File(...)):
             uploaded_at=datetime.now()
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading document: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to upload document")
@@ -150,29 +222,46 @@ async def get_extracted_document(document_id: str):
             detail=f"Document is not ready. Current status: {doc['status']}"
         )
     
-    # Mock extracted content (replace with actual extraction logic)
+    # Check if we have processed data
+    if document_id not in processed_documents:
+        raise HTTPException(status_code=404, detail="Processed document data not found")
+    
+    processed_data = processed_documents[document_id]
+    insights = processed_data["insights"]
+    metadata = processed_data["metadata"]
+    
+    # Structure the extracted content using real processed data
     extracted_content = {
-        "contract_type": "Service Agreement",
-        "parties": ["Company A", "Company B"],
-        "effective_date": "2024-01-01",
-        "terms": {
-            "duration": "12 months",
-            "payment_schedule": "Monthly"
+        "document_type": insights["document_type"],
+        "summary": insights["summary"],
+        "key_topics": insights["key_topics"],
+        "entities": insights["entities"],
+        "confidence_score": insights["confidence_score"],
+        "metadata": {
+            "total_pages": metadata["total_pages"],
+            "total_chunks": metadata["total_chunks"],
+            "processing_time": metadata["processing_time"],
+            "file_size": metadata["file_size"]
         },
-        "clauses": [
-            {"section": "1", "title": "Services", "content": "Provider shall deliver..."},
-            {"section": "2", "title": "Payment", "content": "Client shall pay..."}
-        ]
+        "chunks_preview": processed_data["chunks"][:3],  # First 3 chunks as preview
+        "raw_pages_preview": processed_data.get("raw_pages", [])
     }
     
-    # Mock PHI redaction
-    redacted_fields = ["ssn", "phone_number", "email"] if "personal" in doc.get("filename", "").lower() else []
+    # Check for potential PHI based on entities and content
+    redacted_fields = []
+    for entity in insights.get("entities", []):
+        if entity.get("type") in ["PERSON", "EMAIL", "PHONE", "SSN"]:
+            redacted_fields.append(entity["type"].lower())
+    
+    # Additional PHI check based on filename
+    if "personal" in doc.get("filename", "").lower():
+        redacted_fields.extend(["personal_info", "contact_details"])
     
     return ExtractedDocument(
         document_id=document_id,
         content=extracted_content,
-        extracted_at=datetime.now(),
-        redacted_fields=redacted_fields
+        extracted_at=datetime.fromisoformat(metadata["processed_at"]) if isinstance(metadata["processed_at"], str) else metadata["processed_at"],
+        redacted_fields=list(set(redacted_fields))  # Remove duplicates
     )
 
 @app.post("/chat", response_model=ChatResponse)
