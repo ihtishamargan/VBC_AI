@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 # Enums
 class DocumentStatus(str, Enum):
-    QUEUED = "queued"
+    PENDING = "pending"
+    QUEUED = "queued"  
     PROCESSING = "processing"
     DONE = "done"
     ERROR = "error"
@@ -45,10 +46,18 @@ class DocumentAnalysisResult(BaseModel):
 
 class DocumentUploadResponse(BaseModel):
     document_id: str
+    filename: str
     status: DocumentStatus
-    uploaded_at: datetime
-    filename: Optional[str] = None
-    analysis: Optional[DocumentAnalysisResult] = None
+    processing_time_seconds: float
+    file_size_bytes: int
+    pages_processed: int
+    chunks_created: int
+    vectors_stored: int
+    analysis_summary: Optional[str] = None
+    key_topics: List[str] = []
+    entities_found: List[Dict[str, Any]] = []
+    vbc_contract_data: Optional["VBCContractData"] = None
+    error_message: Optional[str] = None
 
 
 class DocumentStatusResponse(BaseModel):
@@ -71,7 +80,7 @@ class Source(BaseModel):
     chunk_id: str
     content: str
     score: float
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any] = {}
 
 
 class ChatResponse(BaseModel):

@@ -4,8 +4,8 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
-from app.routes import documents_router, chat_router, system_router
+from backend.app.config import settings
+from backend.app.routes import documents_router, chat_router, system_router
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.log_level))

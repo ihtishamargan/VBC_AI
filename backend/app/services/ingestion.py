@@ -7,11 +7,11 @@ from datetime import datetime
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 
-from backend.app.services.llm_analyzer import LLMDocumentAnalyzer, DocumentAnalysis
-from backend.app.services.vbc_analyzer import VBCContractAnalyzer
-from backend.app.services.qdrant_store import QdrantStoreDense as QdrantStore
-from backend.app.services.database import DatabaseService
-from backend.app.config import settings
+from .llm_analyzer import LLMDocumentAnalyzer, DocumentAnalysis
+from .vbc_analyzer import VBCContractAnalyzer
+from .qdrant_store import QdrantStoreDense as QdrantStore
+from .database import DatabaseService
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
