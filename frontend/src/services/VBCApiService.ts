@@ -6,6 +6,9 @@ import axios, { AxiosResponse } from 'axios';
 // API Base URL - adjust based on your backend configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
+// API Authentication Token
+const API_TOKEN = process.env.REACT_APP_VBC_TOKEN || 'vbc_frontend_token_2024';
+
 // API Response interfaces
 interface ChatRequest {
   message: string;
@@ -25,7 +28,7 @@ interface ChatResponse {
 interface DocumentUploadResponse {
   document_id: string;
   filename: string;
-  status: 'PENDING' | 'PROCESSING' | 'DONE' | 'ERROR';
+  status: 'PENDING' | 'QUEUED' | 'PROCESSING' | 'DONE' | 'ERROR';
   processing_time_seconds: number;
   file_size_bytes: number;
   pages_processed: number;
@@ -39,17 +42,19 @@ interface DocumentUploadResponse {
     parties: Array<{
       name: string;
       type: string;
-      role: string;
+      country?: string;
     }>;
     country: string;
     disease_area: string;
-    patient_population_size: number;
-    payment_model: string;
-    currency: string;
-    outcome_metrics: Array<{
+    patient_population_size?: number;
+    financial_structure?: {
+      payment_model?: string;
+      currency?: string;
+    };
+    outcome_metrics?: Array<{
       name: string;
       type: string;
-      target_value: string;
+      target_value?: string;
     }>;
     extraction_confidence: number;
   };
@@ -58,7 +63,7 @@ interface DocumentUploadResponse {
 
 interface DocumentStatusResponse {
   document_id: string;
-  status: 'PENDING' | 'PROCESSING' | 'DONE' | 'ERROR';
+  status: 'PENDING' | 'QUEUED' | 'PROCESSING' | 'DONE' | 'ERROR';
   created_at: string;
   updated_at: string;
   error_message?: string;
@@ -70,6 +75,7 @@ export class VBCApiService {
     timeout: 30000,
     headers: {
       'Content-Type': 'application/json',
+      'X-API-Key': API_TOKEN,
     },
   });
 
@@ -95,13 +101,15 @@ export class VBCApiService {
    */
   static async createDocumentAnalysis(documentId: string, filename: string, vbcData?: any): Promise<ChatResponse> {
     try {
-      const params = new URLSearchParams();
-      params.append('document_id', documentId);
-      params.append('filename', filename);
+      const requestBody = {
+        document_id: documentId,
+        filename: filename,
+        vbc_data: vbcData || null
+      };
       
       const response: AxiosResponse<ChatResponse> = await this.axiosInstance.post(
-        `/chat/document-analysis?${params}`,
-        vbcData ? { vbc_data: vbcData } : {}
+        '/chat/document-analysis',
+        requestBody
       );
 
       return response.data;
@@ -125,6 +133,7 @@ export class VBCApiService {
         {
           headers: {
             'Content-Type': 'multipart/form-data',
+            'X-API-Key': API_TOKEN,
           },
           timeout: 120000, // 2 minutes for document processing
         }
@@ -146,7 +155,7 @@ export class VBCApiService {
   static async getDocumentStatus(documentId: string): Promise<DocumentStatusResponse> {
     try {
       const response: AxiosResponse<DocumentStatusResponse> = await this.axiosInstance.get(
-        `/documents/${documentId}/status`
+        `/documents/status/${documentId}`
       );
 
       return response.data;
@@ -156,24 +165,7 @@ export class VBCApiService {
     }
   }
 
-  /**
-   * Search through documents
-   */
-  static async searchDocuments(query: string, filters?: Record<string, any>): Promise<any> {
-    try {
-      const params = new URLSearchParams();
-      params.append('q', query);
-      if (filters) {
-        params.append('filters', JSON.stringify(filters));
-      }
 
-      const response = await this.axiosInstance.get(`/search?${params}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error searching documents:', error);
-      throw new Error('Failed to search documents.');
-    }
-  }
 
   /**
    * Get application health status

@@ -1,16 +1,16 @@
 """System health and metrics endpoints."""
-import logging
+
 from datetime import datetime
 
 from fastapi import APIRouter
 
 from backend.app.models import HealthResponse, MetricsResponse
-from backend.app.routes.documents import documents_db
-from backend.app.routes.chat import get_chat_metrics
-from backend.app.models import DocumentStatus
+from backend.app.services.chat_service import chat_service
+from backend.app.storage.document_storage import document_storage
+from backend.app.utils.logger import get_module_logger
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = get_module_logger(__name__)
 
 # Create router
 router = APIRouter(tags=["system"])
@@ -22,25 +22,22 @@ app_start_time = datetime.now()
 @router.get("/healthz", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
-    return HealthResponse(
-        status="healthy",
-        timestamp=datetime.now()
-    )
+    return HealthResponse(status="healthy", timestamp=datetime.now())
 
 
 @router.get("/metrics", response_model=MetricsResponse)
 async def get_metrics():
     """Get application metrics."""
-    
+
     uptime = (datetime.now() - app_start_time).total_seconds()
-    processing_docs = len([doc for doc in documents_db.values() if doc["status"] == DocumentStatus.PROCESSING])
-    chat_metrics = get_chat_metrics()
-    
+    storage_stats = document_storage.get_storage_stats()
+    chat_metrics = chat_service.get_chat_metrics()
+
     return MetricsResponse(
-        total_documents=len(documents_db),
-        processing_documents=processing_docs,
+        total_documents=storage_stats["total_documents"],
+        processing_documents=storage_stats["processing_documents"],
         total_queries=chat_metrics["total_queries"],
-        uptime_seconds=uptime
+        uptime_seconds=uptime,
     )
 
 
@@ -51,6 +48,6 @@ async def root():
         "message": "VBC AI API",
         "version": "0.1.0",
         "docs": "/docs",
-        "health": "/healthz", 
-        "metrics": "/metrics"
+        "health": "/healthz",
+        "metrics": "/metrics",
     }

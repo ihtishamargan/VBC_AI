@@ -1,14 +1,16 @@
 """Pydantic models for VBC AI RAG backend."""
+
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Dict, Any
+from typing import Any, Optional
+
 from pydantic import BaseModel
 
 
 # Enums
 class DocumentStatus(str, Enum):
     PENDING = "pending"
-    QUEUED = "queued"  
+    QUEUED = "queued"
     PROCESSING = "processing"
     DONE = "done"
     ERROR = "error"
@@ -17,12 +19,12 @@ class DocumentStatus(str, Enum):
 # Request Models
 class ChatRequest(BaseModel):
     message: str
-    filters: Optional[Dict[str, Any]] = None
+    filters: dict[str, Any] | None = None
 
 
 class SearchRequest(BaseModel):
     q: str
-    filters: Optional[Dict[str, Any]] = None
+    filters: dict[str, Any] | None = None
 
 
 # Response Models
@@ -37,11 +39,11 @@ class ProcessingMetrics(BaseModel):
 class DocumentAnalysisResult(BaseModel):
     document_type: str
     summary: str
-    key_topics: List[str]
-    entities: List[Dict[str, Any]]
+    key_topics: list[str]
+    entities: list[dict[str, Any]]
     confidence_score: float
     processing_metrics: ProcessingMetrics
-    chunks_preview: List[Dict[str, Any]] = []
+    chunks_preview: list[dict[str, Any]] = []
 
 
 class DocumentUploadResponse(BaseModel):
@@ -53,11 +55,11 @@ class DocumentUploadResponse(BaseModel):
     pages_processed: int
     chunks_created: int
     vectors_stored: int
-    analysis_summary: Optional[str] = None
-    key_topics: List[str] = []
-    entities_found: List[Dict[str, Any]] = []
+    analysis_summary: str | None = None
+    key_topics: list[str] = []
+    entities_found: list[dict[str, Any]] = []
     vbc_contract_data: Optional["VBCContractData"] = None
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class DocumentStatusResponse(BaseModel):
@@ -65,14 +67,14 @@ class DocumentStatusResponse(BaseModel):
     status: DocumentStatus
     created_at: datetime
     updated_at: datetime
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class ExtractedDocument(BaseModel):
     document_id: str
-    content: Dict[str, Any]
+    content: dict[str, Any]
     extracted_at: datetime
-    redacted_fields: List[str] = []
+    redacted_fields: list[str] = []
 
 
 class Source(BaseModel):
@@ -80,12 +82,12 @@ class Source(BaseModel):
     chunk_id: str
     content: str
     score: float
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 
 class ChatResponse(BaseModel):
     answer: str
-    sources: List[Source]
+    sources: list[Source]
 
 
 class SearchChunk(BaseModel):
@@ -93,12 +95,12 @@ class SearchChunk(BaseModel):
     document_id: str
     content: str
     score: float
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
 
 class SearchResponse(BaseModel):
     query: str
-    chunks: List[SearchChunk]
+    chunks: list[SearchChunk]
     total_results: int
 
 
@@ -117,6 +119,7 @@ class MetricsResponse(BaseModel):
 # VBC Contract Models
 class PaymentModelType(str, Enum):
     """Types of payment models in VBC contracts."""
+
     CAPITATION = "capitation"
     SHARED_SAVINGS = "shared_savings"
     RISK_SHARING = "risk_sharing"
@@ -128,6 +131,7 @@ class PaymentModelType(str, Enum):
 
 class DiseaseAreaType(str, Enum):
     """Common disease areas in VBC contracts."""
+
     DIABETES = "diabetes"
     RHEUMATOID_ARTHRITIS = "rheumatoid_arthritis"
     HEART_FAILURE = "heart_failure"
@@ -142,108 +146,113 @@ class DiseaseAreaType(str, Enum):
 
 class ContractParty(BaseModel):
     """Individual party in a VBC contract."""
+
     name: str
     type: str
-    country: Optional[str] = None
+    country: str | None = None
 
 
 class FinancialStructure(BaseModel):
     """Financial structure and payment details."""
-    initial_payment: Optional[float] = None
+
+    initial_payment: float | None = None
     currency: str = "USD"
     payment_model: PaymentModelType
-    base_reimbursement: Optional[float] = None
-    shared_savings_percentage: Optional[float] = None
-    risk_corridor_upper: Optional[float] = None
-    risk_corridor_lower: Optional[float] = None
-    maximum_payout: Optional[float] = None
-    minimum_guarantee: Optional[float] = None
+    base_reimbursement: float | None = None
+    shared_savings_percentage: float | None = None
+    risk_corridor_upper: float | None = None
+    risk_corridor_lower: float | None = None
+    maximum_payout: float | None = None
+    minimum_guarantee: float | None = None
 
 
 class RiskProtection(BaseModel):
     """Risk protection mechanisms."""
+
     has_stop_loss: bool = False
     has_risk_cap: bool = False
     has_non_responder_fund: bool = False
-    stop_loss_threshold: Optional[float] = None
-    risk_cap_percentage: Optional[float] = None
+    stop_loss_threshold: float | None = None
+    risk_cap_percentage: float | None = None
 
 
 class OutcomeMetric(BaseModel):
     """Individual outcome metric definition."""
+
     name: str
     type: str
-    target_value: Optional[str] = None
-    measurement_period: Optional[str] = None
-    data_source: Optional[str] = None
-    weight: Optional[float] = None
+    target_value: str | None = None
+    measurement_period: str | None = None
+    data_source: str | None = None
+    weight: float | None = None
 
 
 class VBCContractData(BaseModel):
     """Complete structured data model for Value-Based Care contracts."""
-    
+
     # Core identification
-    agreement_id: Optional[str] = None
+    agreement_id: str | None = None
     agreement_title: str
-    
+
     # Parties and location
-    parties: List[ContractParty]
+    parties: list[ContractParty]
     country: str
-    
+
     # Clinical focus
     disease_area: DiseaseAreaType
-    disease_area_details: Optional[str] = None
-    patient_population_size: Optional[int] = None
-    patient_population_description: Optional[str] = None
-    
+    disease_area_details: str | None = None
+    patient_population_size: int | None = None
+    patient_population_description: str | None = None
+
     # Contract overview
     agreement_overview: str
-    contract_background: Optional[str] = None
-    pilot_program_results: Optional[str] = None
-    
+    contract_background: str | None = None
+    pilot_program_results: str | None = None
+
     # Financial terms
     financial_structure: FinancialStructure
-    
+
     # Duration and timeline
-    duration_months: Optional[int] = None
-    duration_description: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    
+    duration_months: int | None = None
+    duration_description: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+
     # Risk management
     risk_protection: RiskProtection = RiskProtection()
-    
+
     # Outcome metrics
-    outcome_metrics: List[OutcomeMetric] = []
-    primary_endpoints: Optional[List[str]] = None
-    secondary_endpoints: Optional[List[str]] = None
-    
+    outcome_metrics: list[OutcomeMetric] = []
+    primary_endpoints: list[str] | None = None
+    secondary_endpoints: list[str] | None = None
+
     # Quality and performance
-    quality_measures: Optional[List[str]] = None
-    performance_benchmarks: Optional[List[str]] = None
-    
+    quality_measures: list[str] | None = None
+    performance_benchmarks: list[str] | None = None
+
     # Data and reporting
-    data_collection_frequency: Optional[str] = None
-    reporting_requirements: Optional[List[str]] = None
-    
+    data_collection_frequency: str | None = None
+    reporting_requirements: list[str] | None = None
+
     # Compliance and governance
-    regulatory_framework: Optional[str] = None
-    governance_structure: Optional[str] = None
-    
+    regulatory_framework: str | None = None
+    governance_structure: str | None = None
+
     # Additional metadata
-    contract_complexity: Optional[str] = None
-    innovation_elements: Optional[List[str]] = None
-    
+    contract_complexity: str | None = None
+    innovation_elements: list[str] | None = None
+
     # Confidence and processing
     extraction_confidence: float = 0.0
-    processing_notes: Optional[List[str]] = None
+    processing_notes: list[str] | None = None
 
 
 class VBCContractAnalysisResponse(BaseModel):
     """Response model for VBC contract analysis."""
+
     success: bool
-    contract_data: Optional[VBCContractData]
-    error_message: Optional[str]
+    contract_data: VBCContractData | None
+    error_message: str | None
     processing_time_seconds: float
     pages_analyzed: int
     extraction_method: str = "llm_structured"

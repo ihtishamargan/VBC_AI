@@ -9,7 +9,7 @@ import './DocumentUpload.css';
 interface UploadedDocument {
   id: string;
   filename: string;
-  status: 'DONE' | 'ERROR' | 'PROCESSING';
+  status: 'PENDING' | 'QUEUED' | 'PROCESSING' | 'DONE' | 'ERROR';
   analysis?: any;
   vbc_contract_data?: any;
   error_message?: string;
@@ -34,26 +34,14 @@ export const DocumentUpload: React.FC = () => {
       );
       
       console.log('Structured analysis created:', analysisResponse.answer.substring(0, 100) + '...');
-      
-      // Show the analysis preview
-      const preview = analysisResponse.answer.substring(0, 300) + (analysisResponse.answer.length > 300 ? '...' : '');
-      
-      // Show notification with structured analysis
-      setTimeout(() => {
-        const shouldOpenChat = window.confirm(
-          `📄 Document Analysis Ready!\n\n${preview}\n\nWould you like to open the chat interface to see the full structured analysis and ask questions?`
-        );
-        
-        if (shouldOpenChat) {
-          // Emit a custom event to switch to chat with the analysis already loaded
-          window.dispatchEvent(new CustomEvent('switchToChat', { 
-            detail: { 
-              analysis: analysisResponse,
-              autoLoad: true
-            }
-          }));
+
+      // Immediately notify chat to append the analysis message
+      window.dispatchEvent(new CustomEvent('switchToChat', { 
+        detail: { 
+          analysis: analysisResponse,
+          autoLoad: true
         }
-      }, 1000);
+      }));
       
     } catch (error) {
       console.error('Failed to generate structured document analysis:', error);
@@ -104,11 +92,14 @@ export const DocumentUpload: React.FC = () => {
 
     try {
       const response = await VBCApiService.uploadDocument(file);
-      
+
+      // Normalize status from backend to uppercase for consistent checks/UI
+      const normalizedStatus = (response.status || '').toString().toUpperCase();
+
       const newDocument: UploadedDocument = {
         id: response.document_id,
         filename: response.filename,
-        status: response.status as 'DONE' | 'ERROR' | 'PROCESSING',
+        status: normalizedStatus as UploadedDocument['status'],
         analysis: {
           processing_metrics: {
             total_pages: response.pages_processed,
@@ -123,8 +114,8 @@ export const DocumentUpload: React.FC = () => {
       };
 
       setUploadedDocuments(prev => [newDocument, ...prev]);
-      
-      if (response.status === 'DONE') {
+
+      if (normalizedStatus === 'DONE') {
         // Show immediate success with processing stats
         const processingStats = `✅ Document "${file.name}" processed successfully!\n\n📊 Processing Summary:\n• ${response.pages_processed} pages processed\n• ${response.chunks_created} text chunks created\n• ${response.vectors_stored} vectors stored\n• Processing time: ${response.processing_time_seconds.toFixed(1)}s`;
         
@@ -132,7 +123,7 @@ export const DocumentUpload: React.FC = () => {
         
         // Trigger automatic analysis chat message
         generateDocumentAnalysisChat(response);
-      } else if (response.status === 'ERROR') {
+      } else if (normalizedStatus === 'ERROR') {
         alert(`❌ Error processing "${file.name}": ${response.error_message}`);
       }
     } catch (error: any) {
@@ -148,6 +139,8 @@ export const DocumentUpload: React.FC = () => {
         return <CheckCircle className="status-icon success" />;
       case 'ERROR':
         return <XCircle className="status-icon error" />;
+      case 'PENDING':
+      case 'QUEUED':
       case 'PROCESSING':
         return <AlertCircle className="status-icon processing" />;
       default:
@@ -239,13 +232,13 @@ export const DocumentUpload: React.FC = () => {
                         <strong>Disease Area:</strong> {doc.vbc_contract_data.disease_area}
                       </div>
                       <div className="analysis-item">
-                        <strong>Payment Model:</strong> {doc.vbc_contract_data.payment_model}
+                        <strong>Payment Model:</strong> {doc.vbc_contract_data.financial_structure?.payment_model || 'N/A'}
                       </div>
                       <div className="analysis-item">
                         <strong>Patient Population:</strong> {doc.vbc_contract_data.patient_population_size?.toLocaleString() || 'N/A'}
                       </div>
                       <div className="analysis-item">
-                        <strong>Confidence:</strong> 
+                        <strong>Confidence:</strong>
                         <span className="confidence-score">
                           {(doc.vbc_contract_data.extraction_confidence * 100).toFixed(0)}%
                         </span>
@@ -259,7 +252,7 @@ export const DocumentUpload: React.FC = () => {
                         <ul>
                           {doc.vbc_contract_data.parties.map((party: any, idx: number) => (
                             <li key={idx}>
-                              {party.name} ({party.role})
+                              {party.name} ({party.type}{party.country ? `, ${party.country}` : ''})
                             </li>
                           ))}
                         </ul>

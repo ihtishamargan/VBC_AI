@@ -5,33 +5,46 @@ LLM-based Document Analysis using OpenAI o4-mini
 
 import logging
 import os
-from typing import Dict, List, Any, Optional, Union
-from pydantic import BaseModel, Field
+from typing import Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from pydantic import BaseModel, Field
+
+from backend.app.prompts import LLM_DOCUMENT_ANALYSIS_PROMPT
 
 logger = logging.getLogger(__name__)
 
 
 class ExtractedEntity(BaseModel):
     text: str = Field(description="The extracted entity text")
-    type: str = Field(description="Entity type (PERSON, ORGANIZATION, DATE, MONEY, etc.)")
+    type: str = Field(
+        description="Entity type (PERSON, ORGANIZATION, DATE, MONEY, etc.)"
+    )
     confidence: float = Field(description="Confidence score between 0-1")
     context: str = Field(description="Surrounding context where entity was found")
-    start_pos: Optional[int] = Field(None, description="Start position in text")
-    end_pos: Optional[int] = Field(None, description="End position in text")
+    start_pos: int | None = Field(None, description="Start position in text")
+    end_pos: int | None = Field(None, description="End position in text")
 
 
 class DocumentAnalysis(BaseModel):
-    document_type: str = Field(description="Type of document (contract, research_paper, report, etc.)")
+    document_type: str = Field(
+        description="Type of document (contract, research_paper, report, etc.)"
+    )
     summary: str = Field(description="Comprehensive summary of the document")
-    key_topics: List[str] = Field(description="Main topics and themes in the document")
-    entities: List[ExtractedEntity] = Field(description="Extracted entities with confidence scores")
-    confidence_score: float = Field(description="Overall confidence in the analysis (0-1)")
+    key_topics: list[str] = Field(description="Main topics and themes in the document")
+    entities: list[ExtractedEntity] = Field(
+        description="Extracted entities with confidence scores"
+    )
+    confidence_score: float = Field(
+        description="Overall confidence in the analysis (0-1)"
+    )
     language: str = Field(description="Primary language of the document")
-    sentiment: str = Field(description="Overall sentiment (positive, negative, neutral)")
-    key_insights: List[str] = Field(description="Important insights or takeaways")
-    
+    sentiment: str = Field(
+        description="Overall sentiment (positive, negative, neutral)"
+    )
+    key_insights: list[str] = Field(description="Important insights or takeaways")
+
     class Config:
         extra = "forbid"  # This ensures additionalProperties: false in JSON schema
 
@@ -44,7 +57,7 @@ class LLMDocumentAnalyzer:
     def __init__(
         self,
         model: str = "o4-mini",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -61,6 +74,7 @@ class LLMDocumentAnalyzer:
 
         # Create OpenAI client for direct API access (used by retrieval service)
         from openai import OpenAI
+
         self.client = OpenAI(api_key=api_key)
 
         # Bind the schema natively (function/JSON-schema under the hood).
@@ -73,14 +87,9 @@ class LLMDocumentAnalyzer:
 
     @staticmethod
     def _system_prompt() -> str:
-        return (
-            "You are a senior legal/business document analyst. "
-            "Extract high-precision structure aligned to the provided schema. "
-            "If a field is unknown, set a sensible default (e.g., empty list or null) "
-            "rather than guessing."
-        )
+        return LLM_DOCUMENT_ANALYSIS_PROMPT
 
-    def _make_human_message(self, content: str, document_info: Dict[str, Any]) -> str:
+    def _make_human_message(self, content: str, document_info: dict[str, Any]) -> str:
         # Keep it compact; schema does the heavy lifting.
         fname = document_info.get("filename", "unknown")
         pages = document_info.get("total_pages", 0)
@@ -92,7 +101,9 @@ class LLMDocumentAnalyzer:
             f"{content}"
         )
 
-    async def analyze_document(self, content: str, document_info: Dict[str, Any]) -> DocumentAnalysis:
+    async def analyze_document(
+        self, content: str, document_info: dict[str, Any]
+    ) -> DocumentAnalysis:
         """
         Perform analysis using structured outputs. Returns a DocumentAnalysis instance.
         """
@@ -126,10 +137,25 @@ class LLMDocumentAnalyzer:
                 key_insights=[f"Analysis error: {str(e)}"],
             )
 
-    def get_supported_entity_types(self) -> List[str]:
+    def get_supported_entity_types(self) -> list[str]:
         return [
-            "PERSON", "ORGANIZATION", "DATE", "MONEY", "LOCATION",
-            "CONTRACT_TERMS", "LEGAL_REFERENCES", "PRODUCT", "SERVICE",
-            "EMAIL", "PHONE", "PERCENTAGE", "DURATION", "ADDRESS",
-            "LAW", "REGULATION", "CLAUSE", "DEADLINE", "PARTY",
+            "PERSON",
+            "ORGANIZATION",
+            "DATE",
+            "MONEY",
+            "LOCATION",
+            "CONTRACT_TERMS",
+            "LEGAL_REFERENCES",
+            "PRODUCT",
+            "SERVICE",
+            "EMAIL",
+            "PHONE",
+            "PERCENTAGE",
+            "DURATION",
+            "ADDRESS",
+            "LAW",
+            "REGULATION",
+            "CLAUSE",
+            "DEADLINE",
+            "PARTY",
         ]

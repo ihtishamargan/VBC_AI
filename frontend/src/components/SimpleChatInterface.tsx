@@ -39,6 +39,35 @@ export const SimpleChatInterface: React.FC = () => {
     }
   }, [inputValue]);
 
+  // Listen for structured document analysis after upload
+  // The DocumentUpload component dispatches a 'switchToChat' CustomEvent with
+  // detail: { analysis: ChatResponse, autoLoad: boolean }
+  useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        const detail = (e as CustomEvent).detail || {};
+        const analysis = detail.analysis;
+        if (analysis && analysis.answer) {
+          const assistantMessage: Message = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: analysis.answer,
+            timestamp: new Date(),
+            sources: analysis.sources,
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      } catch (err) {
+        console.error('Failed to handle switchToChat event', err);
+      }
+    };
+
+    window.addEventListener('switchToChat' as any, handler as EventListener);
+    return () => {
+      window.removeEventListener('switchToChat' as any, handler as EventListener);
+    };
+  }, []);
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
