@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Test data and uploads
+contract-1/
+Contract-1/
+uploads/
+
+# IDE and OS files
+.DS_Store
+.vscode/
+*.swp
+*.swo

@@ -1,16 +1,54 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: vbc-ai-postgres
+    environment:
+      POSTGRES_DB: vbc_ai
+      POSTGRES_USER: vbc_user
+      POSTGRES_PASSWORD: vbc_secure_password_2024
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vbc_user -d vbc_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # FastAPI Backend
   vbc-ai:
     build: .
+    container_name: vbc-ai-backend
     ports:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      # Database Configuration
+      - DATABASE_URL=postgresql://vbc_user:vbc_secure_password_2024@postgres:5432/vbc_ai
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=vbc_ai
+      - DB_USER=vbc_user
+      - DB_PASSWORD=vbc_secure_password_2024
+      # External API Keys (set these in .env or environment)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_URL=${QDRANT_URL}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
     volumes:
       # Mount for development (uncomment for live reloading)
       # - .:/app
       - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
@@ -21,3 +59,4 @@ services:
 
 volumes:
   uploads:
+  postgres_data:
