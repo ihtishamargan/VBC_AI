@@ -7,6 +7,8 @@ from fastapi import APIRouter, Query, HTTPException
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain.prompts import ChatPromptTemplate
+from langchain.memory import ConversationBufferMemory
+from langchain.schema import HumanMessage, AIMessage
 from qdrant_client import QdrantClient
 
 from backend.app.models import ChatRequest, ChatResponse, SearchResponse, Source
@@ -54,6 +56,19 @@ chat_queries_count = 0
 
 # Retrieval service instance (used by /search endpoint)
 document_retrieval = DocumentRetrievalService()
+
+# In-memory conversation history (in production, use Redis or database)
+conversation_memory: Dict[str, ConversationBufferMemory] = {}
+
+def get_or_create_memory(session_id: str = "default") -> ConversationBufferMemory:
+    """Get or create conversation memory for a session."""
+    if session_id not in conversation_memory:
+        conversation_memory[session_id] = ConversationBufferMemory(
+            return_messages=True,
+            memory_key="chat_history",
+            max_token_limit=4000  # Limit memory to prevent token overflow
+        )
+    return conversation_memory[session_id]
 
 
 async def rewrite_query_with_llm(message: str) -> Dict[str, Any]:
@@ -126,6 +141,77 @@ Please provide a comprehensive answer based on the context provided.""")
     except Exception as e:
         logger.error(f"LLM response generation failed: {e}")
         return "I apologize, but I'm unable to generate a response at this time. Please try again."
+
+
+@router.post("/chat/document-analysis", response_model=ChatResponse)
+async def create_document_analysis_message(
+    document_id: str = Query(..., description="Document ID"),
+    filename: str = Query(..., description="Document filename"),
+    vbc_data: Optional[Dict[str, Any]] = None
+):
+    """Create a structured analysis message for newly uploaded document."""
+    try:
+        # Format structured analysis based on VBC contract data
+        if vbc_data:
+            analysis = f"""📄 **Document Analysis: {filename}**
+
+**🔍 VBC Contract Summary:**
+• Agreement: {vbc_data.get('agreement_title', 'N/A')}
+• Country: {vbc_data.get('country', 'N/A')}
+• Disease Area: {vbc_data.get('disease_area', 'N/A')}  
+• Payment Model: {vbc_data.get('payment_model', 'N/A')}
+• Patient Population: {vbc_data.get('patient_population_size', 'N/A')}
+
+**🏢 Parties:**
+"""
+            if vbc_data.get('parties'):
+                for party in vbc_data['parties']:
+                    analysis += f"• {party.get('name', 'Unknown')} ({party.get('role', 'Unknown role')})\n"
+            else:
+                analysis += "• No parties identified\n"
+
+            analysis += f"""
+**📊 Outcome Metrics:**
+"""
+            if vbc_data.get('outcome_metrics'):
+                for metric in vbc_data['outcome_metrics']:
+                    analysis += f"• {metric.get('name', 'Unknown')} ({metric.get('type', 'Unknown type')})\n"
+            else:
+                analysis += "• No outcome metrics identified\n"
+
+            analysis += f"""
+**🎯 Extraction Confidence:** {(vbc_data.get('extraction_confidence', 0) * 100):.0f}%
+
+You can now ask me specific questions about this contract!"""
+        
+        else:
+            # Fallback for documents without VBC analysis
+            analysis = f"""📄 **Document Analysis: {filename}**
+
+✅ Document successfully processed and indexed for search.
+
+The document has been parsed and is ready for analysis. You can ask me questions like:
+• What are the key terms in this contract?
+• Who are the parties involved?
+• What are the payment terms?
+• What outcome metrics are defined?
+
+I'll search through the document content to provide detailed answers."""
+
+        return ChatResponse(
+            answer=analysis,
+            sources=[Source(
+                document_id=document_id,
+                chunk_id="analysis_summary", 
+                content=f"Document analysis for {filename}",
+                score=1.0,
+                metadata={"type": "document_analysis", "filename": filename}
+            )]
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to create document analysis: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create document analysis")
 
 
 @router.post("/chat", response_model=ChatResponse)

@@ -24,31 +24,16 @@ interface ChatResponse {
 
 interface DocumentUploadResponse {
   document_id: string;
-  status: 'DONE' | 'ERROR' | 'PROCESSING';
-  uploaded_at: string;
   filename: string;
-  analysis?: {
-    document_type: string;
-    summary: string;
-    key_topics: string[];
-    entities: Array<{
-      text: string;
-      type: string;
-      confidence: number;
-    }>;
-    confidence_score: number;
-    processing_metrics: {
-      total_pages: number;
-      total_chunks: number;
-      vectors_stored: number;
-      processing_time: number;
-      file_size: number;
-    };
-    chunks_preview: Array<{
-      content: string;
-      metadata: Record<string, any>;
-    }>;
-  };
+  status: 'PENDING' | 'PROCESSING' | 'DONE' | 'ERROR';
+  processing_time_seconds: number;
+  file_size_bytes: number;
+  pages_processed: number;
+  chunks_created: number;
+  vectors_stored: number;
+  analysis_summary?: string;
+  key_topics: string[];
+  entities_found: Array<Record<string, any>>;
   vbc_contract_data?: {
     agreement_title: string;
     parties: Array<{
@@ -106,6 +91,27 @@ export class VBCApiService {
   }
 
   /**
+   * Create document analysis message
+   */
+  static async createDocumentAnalysis(documentId: string, filename: string, vbcData?: any): Promise<ChatResponse> {
+    try {
+      const params = new URLSearchParams();
+      params.append('document_id', documentId);
+      params.append('filename', filename);
+      
+      const response: AxiosResponse<ChatResponse> = await this.axiosInstance.post(
+        `/chat/document-analysis?${params}`,
+        vbcData ? { vbc_data: vbcData } : {}
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Error creating document analysis:', error);
+      throw new Error('Failed to create document analysis.');
+    }
+  }
+
+  /**
    * Upload a document for processing
    */
   static async uploadDocument(file: File): Promise<DocumentUploadResponse> {
@@ -114,7 +120,7 @@ export class VBCApiService {
       formData.append('file', file);
 
       const response: AxiosResponse<DocumentUploadResponse> = await this.axiosInstance.post(
-        '/upload',
+        '/documents/upload',
         formData,
         {
           headers: {

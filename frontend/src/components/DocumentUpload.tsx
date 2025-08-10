@@ -21,6 +21,46 @@ export const DocumentUpload: React.FC = () => {
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [dragActive, setDragActive] = useState(false);
 
+  // Function to generate automatic document analysis
+  const generateDocumentAnalysisChat = async (uploadResponse: any) => {
+    try {
+      console.log('Creating structured analysis for:', uploadResponse.filename);
+      
+      // Create structured analysis message using the new endpoint
+      const analysisResponse = await VBCApiService.createDocumentAnalysis(
+        uploadResponse.document_id,
+        uploadResponse.filename,
+        uploadResponse.vbc_contract_data
+      );
+      
+      console.log('Structured analysis created:', analysisResponse.answer.substring(0, 100) + '...');
+      
+      // Show the analysis preview
+      const preview = analysisResponse.answer.substring(0, 300) + (analysisResponse.answer.length > 300 ? '...' : '');
+      
+      // Show notification with structured analysis
+      setTimeout(() => {
+        const shouldOpenChat = window.confirm(
+          `📄 Document Analysis Ready!\n\n${preview}\n\nWould you like to open the chat interface to see the full structured analysis and ask questions?`
+        );
+        
+        if (shouldOpenChat) {
+          // Emit a custom event to switch to chat with the analysis already loaded
+          window.dispatchEvent(new CustomEvent('switchToChat', { 
+            detail: { 
+              analysis: analysisResponse,
+              autoLoad: true
+            }
+          }));
+        }
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Failed to generate structured document analysis:', error);
+      alert('Failed to generate automatic analysis. You can still ask questions about the uploaded document in the chat interface.');
+    }
+  };
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -68,17 +108,30 @@ export const DocumentUpload: React.FC = () => {
       const newDocument: UploadedDocument = {
         id: response.document_id,
         filename: response.filename,
-        status: response.status,
-        analysis: response.analysis,
+        status: response.status as 'DONE' | 'ERROR' | 'PROCESSING',
+        analysis: {
+          processing_metrics: {
+            total_pages: response.pages_processed,
+            total_chunks: response.chunks_created,
+            vectors_stored: response.vectors_stored,
+            processing_time: response.processing_time_seconds,
+          }
+        },
         vbc_contract_data: response.vbc_contract_data,
         error_message: response.error_message,
-        uploaded_at: response.uploaded_at,
+        uploaded_at: new Date().toISOString(),
       };
 
       setUploadedDocuments(prev => [newDocument, ...prev]);
       
       if (response.status === 'DONE') {
-        alert(`✅ Document "${file.name}" processed successfully!`);
+        // Show immediate success with processing stats
+        const processingStats = `✅ Document "${file.name}" processed successfully!\n\n📊 Processing Summary:\n• ${response.pages_processed} pages processed\n• ${response.chunks_created} text chunks created\n• ${response.vectors_stored} vectors stored\n• Processing time: ${response.processing_time_seconds.toFixed(1)}s`;
+        
+        alert(processingStats);
+        
+        // Trigger automatic analysis chat message
+        generateDocumentAnalysisChat(response);
       } else if (response.status === 'ERROR') {
         alert(`❌ Error processing "${file.name}": ${response.error_message}`);
       }

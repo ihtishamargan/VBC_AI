@@ -7,11 +7,12 @@ from datetime import datetime
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 
-from .llm_analyzer import LLMDocumentAnalyzer, DocumentAnalysis
-from .vbc_analyzer import VBCContractAnalyzer
-from .qdrant_store import QdrantStoreDense as QdrantStore
-from .database import DatabaseService
-from ..config import settings
+from backend.app.services.llm_analyzer import LLMDocumentAnalyzer, DocumentAnalysis
+from backend.app.services.vbc_analyzer import VBCContractAnalyzer
+from backend.app.services.qdrant_store import QdrantStoreDense as QdrantStore
+from backend.app.services.database import DatabaseService
+from backend.app.services.deduplication import deduplication_service
+from backend.app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +320,9 @@ class DocumentIngestionService:
     async def ingest_document(
         self,
         pages: List[Document],
-        document_id: str
+        document_id: str,
+        file_content: Optional[bytes] = None,
+        filename: str = "unknown.pdf"
     ) -> dict:
         """Complete document ingestion pipeline.
         
@@ -334,6 +337,67 @@ class DocumentIngestionService:
         
         try:
             logger.info(f"Starting document ingestion for {document_id}")
+            
+            # Step 0: Deduplication check (if file content is provided)
+            dedup_result = None
+            text_content = " ".join([page.page_content for page in pages])
+            
+            if file_content:
+                logger.info(f"Performing deduplication check for {document_id}")
+                
+                # Extract agreement ID from VBC analysis for deduplication
+                agreement_id = None
+                if hasattr(self, 'vbc_analyzer') and self.vbc_analyzer:
+                    try:
+                        # Quick VBC analysis just for agreement ID extraction
+                        vbc_response = await self.vbc_analyzer.analyze_contract(text_content, document_id)
+                        if vbc_response.success and vbc_response.contract_data:
+                            agreement_id = vbc_response.contract_data.agreement_id
+                            logger.info(f"Extracted agreement ID for deduplication: {agreement_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to extract agreement ID for deduplication: {e}")
+                
+                # Perform comprehensive deduplication check
+                dedup_result = deduplication_service.perform_comprehensive_check(
+                    file_content=file_content,
+                    text_content=text_content,
+                    filename=filename,
+                    agreement_id=agreement_id
+                )
+                
+                if dedup_result['is_duplicate']:
+                    duplicate_type = dedup_result['duplicate_type']
+                    existing_doc = dedup_result['existing_document']
+                    
+                    logger.info(f"Duplicate document detected ({duplicate_type}): {document_id}")
+                    logger.info(f"Existing document: {existing_doc['document_id']}")
+                    
+                    if dedup_result['should_update']:
+                        # Update existing document (e.g., same agreement, new version)
+                        logger.info(f"Updating existing document {existing_doc['document_id']}")
+                        
+                        # Update deduplication registry
+                        updated_doc = deduplication_service.update_document(
+                            existing_doc, filename, {"updated_version": True}
+                        )
+                        
+                        # Continue with ingestion but log as update
+                        logger.info(f"Proceeding with ingestion as document update")
+                    else:
+                        # Skip ingestion for exact duplicates
+                        logger.info(f"Skipping ingestion for exact duplicate")
+                        processing_time = (datetime.now() - start_time).total_seconds()
+                        
+                        return {
+                            "success": True,
+                            "document_id": document_id,
+                            "duplicate_detected": True,
+                            "duplicate_type": duplicate_type,
+                            "existing_document_id": existing_doc['document_id'],
+                            "skipped": True,
+                            "message": f"Document already exists ({duplicate_type})",
+                            "processing_time": processing_time
+                        }
             
             # Step 1: Analyze document with LLM
             analysis = await self.analyze_document(pages, document_id)
@@ -379,6 +443,37 @@ class DocumentIngestionService:
             # Calculate processing time
             processing_time = (datetime.now() - start_time).total_seconds()
             
+            # Step 5: Register document in deduplication system (if not a duplicate)
+            if file_content and (not dedup_result or not dedup_result['is_duplicate']):
+                try:
+                    # Extract agreement ID from VBC data if available
+                    final_agreement_id = None
+                    if hasattr(self, '_vbc_contract_data') and self._vbc_contract_data:
+                        final_agreement_id = self._vbc_contract_data.agreement_id
+                    elif dedup_result:
+                        final_agreement_id = dedup_result.get('agreement_id')
+                    
+                    # Register the document
+                    deduplication_service.register_document(
+                        document_id=document_id,
+                        filename=filename,
+                        file_hash=dedup_result['file_hash'] if dedup_result else deduplication_service.generate_file_hash(file_content),
+                        content_hash=dedup_result['content_hash'] if dedup_result else deduplication_service.generate_content_hash(text_content),
+                        agreement_id=final_agreement_id,
+                        metadata={
+                            "pages": len(pages),
+                            "chunks": len(chunks), 
+                            "vectors": len(vector_ids),
+                            "analysis_confidence": analysis.confidence_score if analysis else 0.0,
+                            "document_type": analysis.document_type if analysis else "unknown",
+                            "vbc_contract_id": vbc_contract_id
+                        }
+                    )
+                    logger.info(f"Registered document in deduplication system: {document_id}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to register document in deduplication system: {e}")
+            
             result = {
                 "success": True,
                 "document_id": document_id,
@@ -389,7 +484,13 @@ class DocumentIngestionService:
                 "analysis": analysis.model_dump() if analysis else None,
                 "chunks": [chunk.to_dict() for chunk in chunks],
                 "vector_ids": vector_ids,
-                "vbc_contract_id": vbc_contract_id
+                "vbc_contract_id": vbc_contract_id,
+                "deduplication_info": {
+                    "checked": file_content is not None,
+                    "is_duplicate": dedup_result['is_duplicate'] if dedup_result else False,
+                    "duplicate_type": dedup_result.get('duplicate_type') if dedup_result else None,
+                    "was_update": dedup_result.get('should_update') if dedup_result else False
+                } if dedup_result else {"checked": False}
             }
             
             logger.info(
