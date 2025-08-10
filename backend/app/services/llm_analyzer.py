@@ -50,11 +50,18 @@ class LLMDocumentAnalyzer:
         if not api_key:
             raise ValueError("OPENAI_API_KEY is required")
 
+        # Store API key for retrieval service access
+        self.api_key = api_key
+
         # Use o4-mini for structured outputs
         self.llm = ChatOpenAI(
             model=model,
             api_key=api_key,
         )
+
+        # Create OpenAI client for direct API access (used by retrieval service)
+        from openai import OpenAI
+        self.client = OpenAI(api_key=api_key)
 
         # Bind the schema natively (function/JSON-schema under the hood).
         self.structured = self.llm.with_structured_output(
