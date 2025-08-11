@@ -24,7 +24,7 @@ async def upload_document(
 ):
     """Upload and immediately process a document, returning complete analysis."""
     return await document_service.upload_and_process_document(
-        file=file, user_id=current_user.user_id
+        file=file, user_id=current_user.name
     )
 
 

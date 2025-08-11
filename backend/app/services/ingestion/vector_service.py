@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from backend.app.models.ingestion import DocumentChunk, IngestionConfig
+from backend.app.models import DocumentChunk, IngestionConfig
 from backend.app.services.qdrant_store import QdrantStoreDense as QdrantStore
 from backend.app.utils.logger import get_module_logger
 

@@ -16,7 +16,7 @@ class DocumentQueries:
             :summary, :confidence_score, :pages_processed, :chunks_created,
             :vectors_stored, :processing_time_seconds, :processing_status
         )
-        ON CONFLICT (document_id) 
+        ON CONFLICT (document_id)
         DO UPDATE SET
             id = EXCLUDED.id,
             filename = EXCLUDED.filename,
@@ -34,49 +34,49 @@ class DocumentQueries:
     """
 
     INSERT_DOCUMENT_TOPIC = """
-        INSERT INTO document_topics (document_id, topic, confidence_score)
-        VALUES (:document_id, :topic, :confidence_score)
+        INSERT INTO document_topics (document_id, topic, relevance_score)
+        VALUES (:document_id, :topic, :relevance_score)
         ON CONFLICT (document_id, topic) DO NOTHING
     """
 
     INSERT_DOCUMENT_ENTITY = """
         INSERT INTO document_entities (
-            document_id, entity_text, entity_type, confidence_score,
-            start_position, end_position
+            document_id, entity_text, entity_type, confidence,
+            start_pos, end_pos
         ) VALUES (
-            :document_id, :entity_text, :entity_type, :confidence_score,
-            :start_position, :end_position
+            :document_id, :entity_text, :entity_type, :confidence,
+            :start_pos, :end_pos
         )
     """
 
     INSERT_DOCUMENT_CHUNK = """
         INSERT INTO document_chunks (
-            document_id, chunk_index, chunk_text, chunk_embedding_id,
-            token_count, start_page, end_page
+            document_id, chunk_index, content, vector_id,
+            page_number, chunk_metadata
         ) VALUES (
-            :document_id, :chunk_index, :chunk_text, :chunk_embedding_id,
-            :token_count, :start_page, :end_page
+            :document_id, :chunk_index, :content, :vector_id,
+            :page_number, :chunk_metadata
         )
     """
 
     GET_DOCUMENTS = """
-        SELECT 
+        SELECT
             id, document_id, filename, file_size, document_type,
             summary, confidence_score, pages_processed, chunks_created,
             vectors_stored, processing_time_seconds, processing_status,
             created_at, updated_at
-        FROM documents 
-        ORDER BY created_at DESC 
+        FROM documents
+        ORDER BY created_at DESC
         LIMIT :limit
     """
 
     GET_DOCUMENT_BY_ID = """
-        SELECT 
+        SELECT
             id, document_id, filename, file_size, document_type,
             summary, confidence_score, pages_processed, chunks_created,
             vectors_stored, processing_time_seconds, processing_status,
             created_at, updated_at
-        FROM documents 
+        FROM documents
         WHERE document_id = :document_id
     """
 
@@ -118,7 +118,7 @@ class VBCContractQueries:
             :payment_model, :provider_organization, :payer_organization,
             :target_population, :geographic_scope, :created_at
         )
-        ON CONFLICT (document_id) 
+        ON CONFLICT (document_id)
         DO UPDATE SET
             contract_name = EXCLUDED.contract_name,
             contract_type = EXCLUDED.contract_type,
@@ -184,7 +184,7 @@ class SystemQueries:
     TEST_CONNECTION = "SELECT 1"
 
     GET_DATABASE_STATS = """
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM documents) as total_documents,
             (SELECT COUNT(*) FROM document_topics) as total_topics,
             (SELECT COUNT(*) FROM document_entities) as total_entities,

@@ -4,10 +4,12 @@ from .analysis_service import DocumentAnalysisService
 from .chunking_service import DocumentChunkingService
 from .pipeline import DocumentIngestionPipeline
 from .vector_service import VectorStorageService
+from .ingestion_service import DocumentIngestionService
 
 __all__ = [
     "DocumentAnalysisService",
     "DocumentChunkingService",
     "VectorStorageService",
     "DocumentIngestionPipeline",
+    "DocumentIngestionService",
 ]

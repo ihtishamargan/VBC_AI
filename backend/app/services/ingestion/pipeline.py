@@ -5,17 +5,17 @@ from typing import Any
 
 from langchain.schema import Document
 
-from backend.app.models.ingestion import (
+from backend.app.models import (
     DeduplicationInfo,
     IngestionConfig,
     IngestionResult,
     IngestionStatus,
 )
 from backend.app.services.database import database_service
-from backend.app.utils.deduplication import deduplication_service
 from backend.app.services.ingestion.analysis_service import DocumentAnalysisService
 from backend.app.services.ingestion.chunking_service import DocumentChunkingService
 from backend.app.services.ingestion.vector_service import VectorStorageService
+from backend.app.utils.deduplication import deduplication_service
 from backend.app.utils.logger import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -203,28 +203,54 @@ class DocumentIngestionPipeline:
             logger.info(f"Storing document data in database: {document_id}")
 
             # Store document metadata
-            await database_service.save_document_metadata(
+            doc_uuid = await database_service.save_document_metadata(
                 doc_uuid=document_id,
                 document_id=document_id,
                 filename=getattr(pages[0], "metadata", {}).get(
                     "filename", "unknown.pdf"
                 ),
                 file_size=0,  # TODO: Get actual file size
-                document_type=analysis.document_type if analysis else "unknown",
-                summary=analysis.summary if analysis else "",
-                confidence_score=analysis.confidence_score if analysis else 0.0,
+                document_type=getattr(analysis, 'document_type', 'vbc_contract') if analysis else "unknown",
+                summary=getattr(analysis, 'summary', 'VBC Contract Analysis completed') if analysis else "",
+                confidence_score=getattr(analysis, 'confidence_score', 1.0) if analysis else 0.0,
                 pages_processed=len(pages),
                 chunks_created=len(chunks),
                 vectors_stored=len(vector_ids),
                 processing_time_seconds=0,  # Will be updated later
             )
 
+            # Store topics if available
+            if analysis and hasattr(analysis, 'key_topics') and analysis.key_topics:
+                await database_service.save_document_topics(doc_uuid, analysis.key_topics)
+                logger.info(f"Saved {len(analysis.key_topics)} topics for document {document_id}")
+
+            # Store entities if available
+            if analysis and hasattr(analysis, 'entities') and analysis.entities:
+                await database_service.save_document_entities(doc_uuid, analysis.entities)
+                logger.info(f"Saved {len(analysis.entities)} entities for document {document_id}")
+
+            # Store chunks with vector references
+            if chunks:
+                chunks_data = []
+                for i, chunk in enumerate(chunks):
+                    chunk_dict = {
+                        'content': chunk.content,
+                        'metadata': chunk.metadata,
+                        'vector_id': vector_ids[i] if i < len(vector_ids) else None,
+                        'page_number': chunk.metadata.get('page_number', 1)
+                    }
+                    chunks_data.append(chunk_dict)
+                
+                await database_service.save_document_chunks(doc_uuid, chunks_data)
+                logger.info(f"Saved {len(chunks_data)} chunks for document {document_id}")
+
             # Store VBC contract data if available
             vbc_contract_id = None
             if analysis and hasattr(analysis, "vbc_data") and analysis.vbc_data:
                 vbc_contract_id = await database_service.save_vbc_contract(
-                    doc_uuid=document_id, vbc_data=analysis.vbc_data
+                    doc_uuid=doc_uuid, vbc_data=analysis.vbc_data
                 )
+                logger.info(f"Saved VBC contract data for document {document_id}")
 
             return vbc_contract_id
 

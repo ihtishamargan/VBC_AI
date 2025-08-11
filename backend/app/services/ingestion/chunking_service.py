@@ -5,7 +5,7 @@ from typing import Any
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-from backend.app.models.ingestion import DocumentChunk, IngestionConfig
+from backend.app.models import DocumentChunk, IngestionConfig
 from backend.app.services.llm_analyzer import DocumentAnalysis
 from backend.app.utils.logger import get_module_logger
 
@@ -76,15 +76,27 @@ class DocumentChunkingService:
 
                     # Add analysis metadata if available
                     if analysis:
-                        metadata.update(
-                            {
-                                "document_type": analysis.document_type,
-                                "confidence_score": analysis.confidence_score,
-                                "analysis_summary": analysis.summary[:200]
-                                if analysis.summary
-                                else None,
-                            }
-                        )
+                        # Handle different analysis types
+                        if hasattr(analysis, 'document_type'):
+                            # DocumentAnalysis object
+                            metadata.update(
+                                {
+                                    "document_type": analysis.document_type,
+                                    "confidence_score": analysis.confidence_score,
+                                    "analysis_summary": analysis.summary[:200]
+                                    if analysis.summary
+                                    else None,
+                                }
+                            )
+                        else:
+                            # VBCContractAnalysisResponse or other analysis type
+                            metadata.update(
+                                {
+                                    "document_type": "vbc_contract",
+                                    "confidence_score": 1.0,  # VBC analysis is deterministic
+                                    "analysis_summary": f"VBC Contract Analysis - Success: {getattr(analysis, 'success', False)}"
+                                }
+                            )
 
                     # Create chunk
                     chunk = DocumentChunk(content=chunk_text.strip(), metadata=metadata)
@@ -156,9 +168,9 @@ class DocumentChunkingService:
 
         try:
             chunk_sizes = [len(chunk.content) for chunk in chunks]
-            pages_covered = set(
+            pages_covered = {
                 chunk.metadata.get("page_number", 0) for chunk in chunks
-            )
+            }
 
             stats = {
                 "total_chunks": len(chunks),

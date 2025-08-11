@@ -3,6 +3,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from backend.app.auth import AuthUser, require_auth
 from backend.app.models import ChatRequest, ChatResponse, Source
@@ -10,7 +11,7 @@ from backend.app.prompts import (
     get_fallback_analysis_template,
     get_vbc_analysis_template,
 )
-from backend.app.services.chat_service import chat_service
+from backend.app.services import chat_service
 from backend.app.utils.logger import get_module_logger
 
 # Configure logging
@@ -18,9 +19,6 @@ logger = get_module_logger(__name__)
 
 # Create router
 router = APIRouter(tags=["chat"])
-
-
-from pydantic import BaseModel
 
 
 class DocumentAnalysisRequest(BaseModel):
@@ -31,7 +29,7 @@ class DocumentAnalysisRequest(BaseModel):
 
 @router.post("/chat/document-analysis", response_model=ChatResponse)
 async def create_document_analysis_message(
-    request: DocumentAnalysisRequest, current_user: AuthUser = Depends(require_auth)
+    request: DocumentAnalysisRequest, _current_user: AuthUser = Depends(require_auth)
 ):
     """Create a structured analysis message for newly uploaded document."""
     try:
@@ -67,7 +65,7 @@ async def create_document_analysis_message(
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_documents(
-    request: ChatRequest, current_user: AuthUser = Depends(require_auth)
+    request: ChatRequest, _current_user: AuthUser = Depends(require_auth)
 ):
     """
     Simple 4-step chat flow:
@@ -76,12 +74,11 @@ async def chat_with_documents(
     3. Qdrant hybrid search
     4. Top 3 chunks as context + LLM response generation
     """
-    global chat_queries_count
-    chat_queries_count += 1
+    chat_service.increment_query_count()
 
     logger.info(f"📝 Chat query received: {request.message}")
 
-    if not vector_store:
+    if not hasattr(chat_service, "vector_store") or not chat_service.vector_store:
         logger.error("Vector store not available")
         raise HTTPException(status_code=503, detail="Vector store service unavailable")
 
@@ -149,6 +146,7 @@ async def chat_with_documents(
             logger.info("   No relevant documents found")
 
         # Store conversation in memory
+        session_id = "default"  # Could be extracted from request in future
         memory = chat_service.get_or_create_memory(session_id)
         memory.chat_memory.add_user_message(original_message)
         memory.chat_memory.add_ai_message(answer)

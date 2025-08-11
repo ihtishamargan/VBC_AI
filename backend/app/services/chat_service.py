@@ -3,18 +3,24 @@
 import json
 from typing import Any
 
+from langchain.memory import ConversationBufferMemory
+from langchain_qdrant import QdrantVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from qdrant_client import QdrantClient
 
 from backend.app.config import settings
 from backend.app.models import Source
-from backend.app.prompts import RETRIEVAL_SYSTEM_PROMPT, RETRIEVAL_USER_PROMPT_TEMPLATE
+from backend.app.prompts import (
+    QUERY_REWRITE_PROMPT,
+    RESPONSE_GENERATION_PROMPT,
+    RETRIEVAL_SYSTEM_PROMPT,
+    RETRIEVAL_USER_PROMPT_TEMPLATE,
+)
+from backend.app.services.retrieval import DocumentRetrievalService
 from backend.app.utils.logger import get_module_logger
 
 # Configure logging
 logger = get_module_logger(__name__)
-
-from backend.app.prompts import QUERY_REWRITE_PROMPT, RESPONSE_GENERATION_PROMPT
 
 
 class ChatService:
@@ -38,7 +44,7 @@ class ChatService:
     def _initialize_llm(self) -> None:
         """Initialize the LangChain LLM."""
         self.llm = ChatOpenAI(
-            model="gpt-4o-mini", openai_api_key=settings.openai_api_key, temperature=0.1
+            model=settings.openai_model, openai_api_key=settings.openai_api_key, temperature=0.1
         )
         logger.info("LLM initialized")
 
@@ -76,7 +82,7 @@ class ChatService:
             self.conversation_memory[session_id] = ConversationBufferMemory(
                 return_messages=True,
                 memory_key="chat_history",
-                max_token_limit=40000,  # Limit memory to prevent token overflow
+                # TODO: Limit memory to prevent token overflow
             )
         return self.conversation_memory[session_id]
 
@@ -89,8 +95,7 @@ class ChatService:
 
             # Try to parse JSON response
             try:
-                result = json.loads(response.content.strip())
-                return result
+                return json.loads(response.content.strip())
             except json.JSONDecodeError:
                 # Fallback if JSON parsing fails
                 logger.warning(f"Failed to parse LLM JSON response: {response.content}")
@@ -292,7 +297,7 @@ _chat_service_instance: ChatService | None = None
 
 
 def get_chat_service() -> ChatService:
-    """Get the global chat service instance (singleton pattern with lazy initialization)."""
+    """Get the global chat service instance (singleton pattern with lazy init)."""
     global _chat_service_instance
     if _chat_service_instance is None:
         _chat_service_instance = ChatService()

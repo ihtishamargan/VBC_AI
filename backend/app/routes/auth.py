@@ -59,7 +59,7 @@ async def create_access_token(request: TokenRequest):
 
 
 @router.delete("/token")
-async def revoke_access_token(current_user: AuthUser = Depends(require_auth)):
+async def revoke_access_token(_current_user: AuthUser = Depends(require_auth)):
     """Revoke the current bearer token."""
     # Note: This is a simplified implementation
     # In a real system, you'd extract the token from the Authorization header
@@ -79,7 +79,7 @@ async def get_auth_status(current_user: AuthUser = Depends(require_auth)):
 
 
 @router.get("/stats")
-async def get_authentication_stats(current_user: AuthUser = Depends(require_auth)):
+async def get_authentication_stats(_current_user: AuthUser = Depends(require_auth)):
     """Get authentication system statistics (requires auth)."""
     # Clean up expired tokens first
     expired_count = cleanup_expired_tokens()

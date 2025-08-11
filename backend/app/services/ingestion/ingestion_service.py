@@ -2,13 +2,14 @@
 
 from langchain.schema import Document
 
-from backend.app.models.ingestion import (
+from backend.app.models import (
     AnalysisStrategy,
     IngestionConfig,
     IngestionResult,
 )
 from backend.app.services.ingestion.pipeline import DocumentIngestionPipeline
 from backend.app.utils.logger import get_module_logger
+from backend.app.config import settings
 
 logger = get_module_logger(__name__)
 
@@ -40,8 +41,8 @@ class DocumentIngestionService:
             analysis_strategy=AnalysisStrategy.VBC_CONTRACT
             if use_vbc_analyzer
             else AnalysisStrategy.GENERIC_LLM,
-            llm_model=llm_model or "gpt-4",
-            collection_name=collection_name or "vbc_documents",
+            llm_model=llm_model or settings.openai_model,
+            collection_name=collection_name or settings.qdrant_collection_name,
         )
 
         # Initialize pipeline
@@ -94,7 +95,7 @@ class DocumentIngestionService:
         """
         logger.info(f"Delegating vector storage to pipeline for {len(chunks)} chunks")
         # Convert dict chunks back to DocumentChunk objects for the pipeline
-        from backend.app.models.ingestion import DocumentChunk
+        from backend.app.models import DocumentChunk
 
         chunk_objects = [
             DocumentChunk(content=c["content"], metadata=c["metadata"]) for c in chunks

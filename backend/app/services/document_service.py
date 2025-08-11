@@ -1,7 +1,10 @@
 """Document processing service for VBC AI application."""
 
 import asyncio
+import contextlib
+import mimetypes
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,7 +13,10 @@ from fastapi import HTTPException, UploadFile, status
 
 from backend.app.config import settings
 from backend.app.models import DocumentStatus, DocumentUploadResponse
+from backend.app.services import DocumentParser
+from backend.app.services.ingestion import DocumentIngestionService
 from backend.app.storage.document_storage import document_storage
+from backend.app.utils.deduplication import deduplication_service
 from backend.app.utils.file_validation import sanitize_filename, validate_pdf_content
 from backend.app.utils.logger import get_module_logger
 
@@ -44,11 +50,10 @@ class DocumentService:
         file_path = None
 
         try:
-            # Rate limiting check (user-based instead of IP-based)
             recent_uploads = document_storage.get_recent_upload_count(
                 user_id, minutes=60
             )
-            if recent_uploads >= 10:  # Max 10 uploads per hour per user
+            if recent_uploads >= 50:  # Max 50 uploads per hour per user
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Upload rate limit exceeded. Please try again later.",
@@ -88,11 +93,11 @@ class DocumentService:
             document_id = str(uuid.uuid4())
             safe_filename = sanitize_filename(file.filename)
 
-            # Check for duplicate content
-            content_hash = await deduplication_service.calculate_content_hash(content)
-            existing_doc = await deduplication_service.find_duplicate(content_hash)
+            # Check for duplicate content using file hash
+            content_hash = deduplication_service.generate_file_hash(content)
+            is_duplicate, existing_doc = deduplication_service.check_file_hash_duplicate(content_hash)
 
-            if existing_doc:
+            if is_duplicate and existing_doc:
                 logger.info(
                     f"Duplicate document detected: {existing_doc['document_id']}"
                 )
@@ -100,9 +105,11 @@ class DocumentService:
                     document_id=existing_doc["document_id"],
                     filename=existing_doc["filename"],
                     status=existing_doc["status"],
-                    message="Document already exists in the system",
-                    duplicate_of=existing_doc["document_id"],
-                    vbc_data=existing_doc.get("vbc_data"),
+                    processing_time_seconds=0.0,
+                    file_size_bytes=existing_doc.get("metadata", {}).get("file_size", len(content)),
+                    pages_processed=0,
+                    chunks_created=0,
+                    vectors_stored=0,
                 )
 
             # Create document record
@@ -126,24 +133,46 @@ class DocumentService:
             logger.info(f"File saved: {file_path}")
 
             # Register document with deduplication service
-            await deduplication_service.register_document(
-                document_id=document_id,
-                content_hash=content_hash,
-                filename=safe_filename,
-                file_size=len(content),
-            )
-
-            # Start background processing
-            asyncio.create_task(
-                self._process_document_background(document_id, str(file_path))
-            )
-
-            return DocumentUploadResponse(
+            deduplication_service.register_document(
                 document_id=document_id,
                 filename=safe_filename,
-                status=DocumentStatus.PROCESSING,
-                message="Document uploaded successfully and processing started",
+                file_hash=content_hash,
+                content_hash=content_hash,  # For now using same hash for both
+                metadata={"file_size": len(content)},
             )
+
+            # Process document synchronously
+            try:
+                await self._process_document_background(document_id, str(file_path))
+                
+                # Get final processing results
+                doc_record = document_storage.get_document(document_id)
+                processed_data = document_storage.get_processed_data(document_id)
+                metadata = processed_data.get("metadata", {}) if processed_data else {}
+                
+                return DocumentUploadResponse(
+                    document_id=document_id,
+                    filename=safe_filename,
+                    status=DocumentStatus.DONE,
+                    processing_time_seconds=metadata.get("processing_time", 0.0),
+                    file_size_bytes=len(content),
+                    pages_processed=metadata.get("pages_processed", 0),
+                    chunks_created=metadata.get("chunks_created", 0),
+                    vectors_stored=0,  # No vector storage currently
+                )
+            except Exception as processing_error:
+                logger.error(f"Document processing failed: {str(processing_error)}")
+                return DocumentUploadResponse(
+                    document_id=document_id,
+                    filename=safe_filename,
+                    status=DocumentStatus.ERROR,
+                    processing_time_seconds=0.0,
+                    file_size_bytes=len(content),
+                    pages_processed=0,
+                    chunks_created=0,
+                    vectors_stored=0,
+                    error_message=str(processing_error),
+                )
 
         except HTTPException:
             # Re-raise HTTP exceptions as-is
@@ -176,24 +205,25 @@ class DocumentService:
 
             # Step 2: Ingest document with deduplication (analyze, chunk, store vectors)
             result = await self.document_ingestion.ingest_document(
-                pages=pages, document_id=document_id, check_duplicates=True
+                pages=pages, document_id=document_id, filename=str(file_path).split('/')[-1]
             )
 
             logger.info(f"Document ingestion completed for {document_id}")
 
             # Step 3: Store processing results
             processed_data = {
-                "insights": result.get("insights", {}),
+                "insights": result.analysis or {},
+                "vbc_analysis": result.vbc_analysis or {},
                 "metadata": {
-                    "pages_processed": len(pages),
-                    "chunks_created": result.get("chunks_created", 0),
-                    "processing_time": result.get("processing_time", 0.0),
+                    "pages_processed": result.pages_processed,
+                    "chunks_created": result.chunks_created,
+                    "processing_time": result.processing_time,
                     "processed_at": datetime.now(),
                     "file_size": document_storage.get_document(document_id).get(
                         "file_size", 0
                     ),
                 },
-                "chunks": result.get("chunks", []),
+                "chunks": result.chunks,
                 "raw_pages": pages[:5]
                 if pages
                 else [],  # Store first 5 pages as preview
@@ -212,9 +242,9 @@ class DocumentService:
                 exc_info=True,
             )
 
-            # Update status to failed
+            # Update status to error
             document_storage.update_document_status(
-                document_id, DocumentStatus.FAILED, error_message=str(e)
+                document_id, DocumentStatus.ERROR, error_message=str(e)
             )
 
     async def _cleanup_failed_upload(
@@ -226,10 +256,8 @@ class DocumentService:
         """Clean up resources after failed upload."""
         # Clean up temporary file if it exists
         if temp_file_path and temp_file_path.exists():
-            try:
+            with contextlib.suppress(Exception):
                 temp_file_path.unlink()
-            except Exception:
-                pass
 
         # Clean up final file if it was saved
         if file_path and file_path.exists():

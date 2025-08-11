@@ -61,7 +61,7 @@ class DocumentDeduplicationService:
         return False, None
 
     def check_content_similarity(
-        self, content_hash: str, similarity_threshold: float = 0.95
+        self, content_hash: str, similarity_threshold: float = 0.95  # noqa: ARG002
     ) -> tuple[bool, dict[str, Any] | None]:
         """
         Check if similar content already exists.
@@ -70,7 +70,7 @@ class DocumentDeduplicationService:
         Could be extended with semantic similarity using embeddings.
         """
         # Simple implementation: exact content hash match
-        for file_hash, doc_info in self.document_hashes.items():
+        for _file_hash, doc_info in self.document_hashes.items():
             if doc_info.get("content_hash") == content_hash:
                 logger.info(f"Found duplicate by content hash: {content_hash[:16]}...")
                 return True, doc_info
@@ -153,7 +153,7 @@ class DocumentDeduplicationService:
         self,
         file_content: bytes,
         text_content: str,
-        filename: str,
+        filename: str,  # noqa: ARG002
         agreement_id: str | None = None,
     ) -> dict[str, Any]:
         """
@@ -162,7 +162,7 @@ class DocumentDeduplicationService:
         Returns:
             {
                 'is_duplicate': bool,
-                'duplicate_type': str,  # 'file_hash', 'agreement_id', 'content_hash', None
+                'duplicate_type': str,  # 'file_hash', 'agreement_id', 'content_hash'
                 'existing_document': dict or None,
                 'file_hash': str,
                 'content_hash': str,

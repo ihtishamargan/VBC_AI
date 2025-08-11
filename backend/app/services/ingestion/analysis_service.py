@@ -5,9 +5,9 @@ from abc import ABC, abstractmethod
 from langchain.schema import Document
 
 from backend.app.config import settings
-from backend.app.models.ingestion import AnalysisStrategy
+from backend.app.models import AnalysisStrategy
 from backend.app.services.llm_analyzer import DocumentAnalysis, LLMDocumentAnalyzer
-from backend.app.services.vbc_analyzer import VBCContractAnalyzer
+from backend.app.services.vbc_analyzer import VBCContractAnalyzer as VBCAnalyzer
 from backend.app.utils.logger import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -30,7 +30,7 @@ class VBCContractAnalyzer(DocumentAnalyzer):
     def __init__(self, model: str = None, api_key: str = None):
         """Initialize VBC contract analyzer."""
         try:
-            self.analyzer = VBCContractAnalyzer(
+            self.analyzer = VBCAnalyzer(
                 model=model or settings.openai_model,
                 api_key=api_key or settings.openai_api_key,
             )
@@ -112,7 +112,7 @@ class NoAnalyzer(DocumentAnalyzer):
     """No-op analyzer that skips analysis."""
 
     async def analyze(
-        self, pages: list[Document], document_id: str
+        self, _pages: list[Document], document_id: str
     ) -> DocumentAnalysis | None:
         """Skip analysis and return None."""
         logger.info(f"Skipping analysis for document {document_id}")

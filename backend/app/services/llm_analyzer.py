@@ -3,6 +3,7 @@ LLM-based Document Analysis using OpenAI o4-mini
 - Uses LangChain structured outputs instead of brittle manual JSON parsing.
 """
 
+import contextlib
 import logging
 import os
 from typing import Any
@@ -11,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from backend.app.config import settings
 from backend.app.prompts import LLM_DOCUMENT_ANALYSIS_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,7 @@ class LLMDocumentAnalyzer:
 
     def __init__(
         self,
-        model: str = "o4-mini",
+        model: str = settings.openai_model,
         api_key: str | None = None,
     ):
         api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -118,10 +120,8 @@ class LLMDocumentAnalyzer:
         try:
             result = await self.structured.ainvoke(messages)
             # Optional: log usage for observability/cost control
-            try:
+            with contextlib.suppress(Exception):
                 logger.debug(f"Token usage: {getattr(result, 'usage_metadata', None)}")
-            except Exception:
-                pass
             return result
         except Exception as e:
             logger.exception("LLM structured analysis failed")

@@ -1,7 +1,7 @@
 """Database service for PostgreSQL operations."""
 
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +15,9 @@ from backend.app.database.queries import (
     SystemQueries,
     VBCContractQueries,
 )
+
+if TYPE_CHECKING:
+    from backend.app.models import VBCContractData
 from backend.app.utils.logger import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -58,7 +61,7 @@ class DatabaseService:
         """Test database connection."""
         try:
             with self.sync_engine.connect() as conn:
-                result = conn.execute(text(SystemQueries.TEST_CONNECTION))
+                conn.execute(text(SystemQueries.TEST_CONNECTION))
                 logger.info("Database connection successful")
                 return True
         except Exception as e:
@@ -201,6 +204,8 @@ class DatabaseService:
                                 "type", entity.get("label", "unknown")
                             ),
                             "confidence": entity.get("confidence", 0.5),
+                            "start_pos": entity.get("start", 0),
+                            "end_pos": entity.get("end", 0),
                         },
                     )
 
@@ -504,12 +509,8 @@ class DatabaseService:
         """Get database statistics."""
         try:
             async with self.get_session() as session:
-                stats_query = text(SystemQueries.GET_DATABASE_STATS)
-
-                result = await session.execute(stats_query)
-                stats = dict(result.fetchone()._mapping)
-
-                return stats
+                result = await session.execute(text(SystemQueries.SCHEMA_STATS))
+                return dict(result.fetchone()._mapping)
 
         except SQLAlchemyError as e:
             logger.error(f"Failed to get database stats: {e}")

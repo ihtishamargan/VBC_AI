@@ -7,7 +7,7 @@ QUERY_REWRITE_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """You are a VBC (Value-Based Care) contract analysis assistant. 
+            """You are a VBC (Value-Based Care) contract analysis assistant.
 Your job is to:
 1. Rewrite the user query to be more specific and searchable for VBC contracts
 2. Identify if any filters should be applied to the search
@@ -25,7 +25,7 @@ RESPONSE_GENERATION_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """You are a VBC (Value-Based Care) contract analysis expert. 
+            """You are a VBC (Value-Based Care) contract analysis expert.
 Answer questions about VBC contracts using the provided context.
 
 Guidelines:
@@ -84,7 +84,7 @@ def get_vbc_analysis_template(filename: str, vbc_data: dict) -> str:
 **🔍 VBC Contract Summary:**
 • Agreement: {vbc_data.get("agreement_title", "N/A")}
 • Country: {vbc_data.get("country", "N/A")}
-• Disease Area: {vbc_data.get("disease_area", "N/A")}  
+• Disease Area: {vbc_data.get("disease_area", "N/A")}
 • Payment Model: {vbc_data.get("payment_model", "N/A")}
 • Patient Population: {vbc_data.get("patient_population_size", "N/A")}
 
@@ -171,7 +171,7 @@ REQUIRED EXTRACTION FIELDS:
 
 **Risk Management:**
 - has_stop_loss: Boolean for stop-loss protection
-- has_risk_cap: Boolean for risk cap mechanisms  
+- has_risk_cap: Boolean for risk cap mechanisms
 - has_non_responder_fund: Boolean for non-responder protection
 - Specific thresholds and percentages for risk mechanisms
 
